@@ -1,8 +1,55 @@
-name: hello-world
-'on': push
+name: ftms
+on:
+  workflow_dispatch:
+env:
+  PORT: 8022
+  SMTPHOST: mailmta.aepsc.com
+  SMTPPORT: 2525
+  MFTHOSTNAME: mftsfgd1x.aepsc.com
+  MFTUSERNAME: MFTkafkaadms-t
 jobs:
-  my-job:
-    runs-on: ubuntu-latest
+  unit-test:
+    name: ftms unit test
+    runs-on: [ Windows ]
+    if: github.ref == 'refs/heads/main'
     steps:
-     - name: my-step
-       run: echo "Hello World!"
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      - name: set global index to JFrog
+        run: python -m pip config --user set global.index https://rtfx.aepsc.com/artifactory/api/pypi/pypi
+      - name: set global index URL to JFrog
+        run: python -m pip config --user set global.index-url https://rtfx.aepsc.com/artifactory/api/pypi/pypi/simple
+      - name: add JFrog to trusted hosts
+        run: python -m pip config --user set global.trusted-host "rtfx.aepsc.com pypi.org files.pythonhosted.org pypi.python.org"
+      - name: install dependencies
+        run: pip install -r .\requirements.txt
+​
+  build:
+    name: ftms docker build
+    needs: unit-test
+    runs-on: Docker
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: login-github-registy
+        uses: docker/login-action@v1
+        with:
+          registry: github.aepsc.com
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: login-artifactory-registry
+        uses: docker/login-action@v1
+        with:
+          registry: docker.rtfx.aepsc.com
+          username: ${{ secrets.ARTIFACTORY_DEPLOY_USERNAME }}
+          password: ${{ secrets.ARTIFACTORY_DEPLOY_PASSWORD }}
+      - name: Dockerize App
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          context: .
+          tags: docker.rtfx.aepsc.com/aep-icoe-cp-artifacts/ftms:${{ github.sha }}
